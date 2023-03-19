@@ -1,0 +1,60 @@
+<html>
+<script language="javascript">
+function colons() {
+  addcolon = document.getElementById("add").checked;
+  upper = document.getElementById("uc").checked;
+  lower = document.getElementById("lc").checked;
+  input=document.getElementById("wwns").value;
+  if (lower) { 
+    input = input.toLowerCase();
+  } else if (upper) {
+    input = input.toUpperCase();
+  }
+  if (addcolon) {
+    input = input.replace(/[0-9a-fA-F]{2}(?=.)(?!:)/gm,function (x) {
+      return x+":";
+      });
+  } else {
+    input = input.replace(/:/gm,"");
+  }
+  document.getElementById("outputwwns").value=input;
+};
+
+function docolons() {
+  colons();
+  };
+</script>
+
+<head>
+<title>Add/Remove colons from WWNs</title>
+</head>
+<body>
+<h1>Add/Remove Colons from WWNs</h1>
+<table>
+  	<tbody>
+    <tr>
+        <td><form><textarea name="wwns" id="wwns" rows="20" cols="30" placeholder="one wwn per line" required="">
+</textarea></form></td>
+        <td><button onClick="colons();">Convert >></button></td>
+        <td><form><textarea name="outputwwns" id="outputwwns" rows="20" cols="30" placeholder="output goes here"></textarea></form></td>
+    </tr>
+    <tr>
+    	<td colspan="2">
+  <div id="output">
+    <form>
+    Include Colons? 
+  	<input type="radio" id="add" name="colons" onClick="docolons();" value="Yes" checked="checked">Yes</input>
+  	<input type="radio" id="remove" name="colons" onClick="docolons();" value="No">No</input>
+    <br/>
+    Output case?
+  	<input type="radio" id="lc" name="casetype" onClick="docolons();" value="lowercase" checked="checked">Lower Case</input>
+  	<input type="radio" id="uc" name="casetype" onClick="docolons();" value="uppercase">Upper Case</input>
+  	<input type="radio" id="nc" name="casetype" value="no change">No Change</input>
+   
+    </form>
+  </div></td>
+	</tr>
+  </tbody>
+ </table>
+ </body>
+</html>
