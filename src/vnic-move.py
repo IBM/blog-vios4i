@@ -13,17 +13,6 @@ import sys
 import subprocess
 import argparse
 
-# Parameters that you can change to meet your requirements
-# Parameters needed:
-#
-# hmc=, system= (required if no file)
-# file= (required if no hmc/sysname) - file|-
-# vios= (required unless autofailover)
-# verify (flag-optional) check for errors and print commands but do not run
-# force (flag-optional) run commands even if errors are found 
-# autofailover=0|1 (optional) sets autofailover flag on or off on all vNICs
-# 
-
 description="""Changes vNIC backing devices to alternate devices to allow maintenance on a VIOS server.
 
 This script will access the HMC and system specified to determine which vNIC devices are currently
@@ -57,7 +46,7 @@ inputgroup.add_argument("--offline",help="Show the command to get HMC data for o
 
 reqdgroup = parser.add_mutually_exclusive_group(required=True)
 reqdgroup.add_argument("--vios",help="VIOS to disable backing devices")
-reqdgroup.add_argument("--autofailover",help="Set autofailover flag on all vNICs",type=int,choices=[0,1])
+reqdgroup.add_argument("--autofailover",help="Set autofailover flag on all vNICs",choices=['0','1'])
 
 parser.add_argument("--system",help="System name for vNICs to process",required=True)
 parser.add_argument("--verify",help="Check for errors and print commands but do not run",action="store_true")
@@ -100,7 +89,9 @@ def run_hmc_query(hmc, basecmd, namelist):
    query function.
 
  Parameters are passed by position AND keyword hash reference
-   1 (required)  :  The hmc host name where the command should be run
+   1 (required)  :  The hmc host name where the command to collect the data offline
+                     or '%%OFFLINE' to print the command to run on HMC offline
+                     or a file or stream (like sys.stdio) containing the command output 
    2 (required)  :  The base comand to be run.  Usually 'lssyscfg' with some options.
    3 (required)  :  a reference to an Array of field names to retreive.
 
@@ -206,43 +197,52 @@ if (hmcORfile=="%%OFFLINE"):
 viosfound=False
 
 for vnic in vniclist:
-  changeit = False
-  newbdev = None
-  backinglist = structuredfield(vnic['backing_devices'],['sriov','vios-lpar-name','vios-lpar-ID','sriov-adapter-ID','sriov-physical-port-ID','sriov-logical-port-ID',
-  'current-capacity','desired-capacity','failover-priority','current-max-capacity','desired-max-capacity'])
-  backingstate = structuredfield(vnic['backing_device_states'],['sriov','sriov-logical-port-ID','active','status'])
-
-  # make a lookup table by sriov-logical-port-id
-  statlookup = dict()
-  for bstate in backingstate:
-    statlookup[bstate['sriov-logical-port-ID']]=bstate
-
-  for bdev in sorted(backinglist,key=byprty):
-    bstate = statlookup[bdev['sriov-logical-port-ID']]
-    bdev['state']=bstate
-    if (bdev['vios-lpar-name'] == viosdown):
-      viosfound=True
-      if (bstate['active']=='1'):
-        changeit = True
-    else:
-      if (bstate['status'] == 'Operational'):
-        if (newbdev == None):
-          # only the first one
-          newbdev = bdev
-    if (bstate['active']=='1'):
-      origbdev = bdev
-    
+  if (viosdown != None):
+    # this part is for vios disable processing 
+    changeit = False
+    newbdev = None
+    backinglist = structuredfield(vnic['backing_devices'],['sriov','vios-lpar-name','vios-lpar-ID','sriov-adapter-ID','sriov-physical-port-ID','sriov-logical-port-ID',
+    'current-capacity','desired-capacity','failover-priority','current-max-capacity','desired-max-capacity'])
+    backingstate = structuredfield(vnic['backing_device_states'],['sriov','sriov-logical-port-ID','active','status'])
   
-  if (changeit):
-    if (newbdev == None):
-      print("ERROR: No operational backup device found to replace active device on "+viosdown+" for Lpar "+vnic['lpar_id']+" slot "+vnic['slot_num'])
-      errors+=1
+    # make a lookup table by sriov-logical-port-id
+    statlookup = dict()
+    for bstate in backingstate:
+      statlookup[bstate['sriov-logical-port-ID']]=bstate
+  
+    for bdev in sorted(backinglist,key=byprty):
+      bstate = statlookup[bdev['sriov-logical-port-ID']]
+      bdev['state']=bstate
+      if (bdev['vios-lpar-name'] == viosdown):
+        viosfound=True
+        if (bstate['active']=='1'):
+          changeit = True
+      else:
+        if (bstate['status'] == 'Operational'):
+          if (newbdev == None):
+            # only the first one
+            newbdev = bdev
+      if (bstate['active']=='1'):
+        origbdev = bdev
+    
+    if (changeit):
+      if (newbdev == None):
+        print("ERROR: No operational backup device found to replace active device on "+viosdown+" for Lpar "+vnic['lpar_id']+" slot "+vnic['slot_num'])
+        errors+=1
+      else:
+        cmd = "chhwres -m "+sysname+" -r virtualio --rsubtype vnicbkdev -o act --id "+vnic['lpar_id']+" -s "+vnic['slot_num']+" --logport "+newbdev['sriov-logical-port-ID']
+        commands.append(cmd)
+        print("Changing Lpar "+vnic['lpar_name']+" slot "+vnic['slot_num']+" to device with priority "+newbdev['failover-priority']+" because it IS running on vios "+viosdown)
     else:
-      cmd = "chhwres -m "+sysname+" -r virtualio --rsubtype vnicbkdev -o act --id "+vnic['lpar_id']+" -s "+vnic['slot_num']+" --logport "+newbdev['sriov-logical-port-ID']
+      print("NOT Changing Lpar "+vnic['lpar_name']+" slot "+vnic['slot_num']+" because it is running on vios "+origbdev['vios-lpar-name'])
+
+  elif (args.autofailover != None):
+    # this part is for autofailover processing
+    viosfound = True # This just keeps the vios not found from triggering
+    if (args.autofailover != vnic['auto_priority_failover']):
+      cmd = "chhwres -m "+sysname+" -r virtualio --rsubtype vnic -o s --id "+vnic['lpar_id']+" -s "+vnic['slot_num']+" -a \"auto_priority_failover="+str(args.autofailover)+'"'
       commands.append(cmd)
-      print("Changing Lpar "+vnic['lpar_name']+" slot "+vnic['slot_num']+" to device with priority "+newbdev['failover-priority']+" because it IS running on vios "+viosdown)
-  else:
-    print("NOT Changing Lpar "+vnic['lpar_name']+" slot "+vnic['slot_num']+" because it is running on vios "+origbdev['vios-lpar-name'])
+      print("Changing Lpar "+vnic['lpar_name']+" slot "+vnic['slot_num']+" to auto_priority_failover="+str(args.autofailover))
 
 if (not viosfound):
   print("ERROR: vios "+viosdown+" was not found in any vNIC record - verify parameters are correct, especially vios name")
@@ -267,4 +267,4 @@ if (errors>0):
     exit(0)
 
 #TODO - execute the SSH commands to change backing device
-print("CHANGING BACKING DEVICES FOR REAL!")
+print("CHANGING VNIC FOR REAL!")
