@@ -40,7 +40,7 @@ reset all vNIC devices to the proper backing devices based on priority.
 parser = argparse.ArgumentParser(description=description)
 
 inputgroup = parser.add_mutually_exclusive_group(required=True)
-inputgroup.add_argument("--hmc",help="HMC to connect to for vNIC information")
+inputgroup.add_argument("--hmc",help="HMC to connect to for vNIC information [username@]hmcname - user portion defaults to hscroot")
 inputgroup.add_argument("--file",help="Filename containing HMC command output (for use wihout connection to HMC)")
 inputgroup.add_argument("--offline",help="Show the command to get HMC data for offline use",action="store_true")
 
@@ -68,6 +68,8 @@ if (args.file != None):
     hmcORfile=open(args.file,"r")
 else:
   hmcORfile = args.hmc
+  if not '@' in hmcORfile:
+    hmcORfile = 'hscroot@' + hmcORfile
   
 if (args.offline):
   hmcORfile = "%%OFFLINE"
@@ -266,5 +268,13 @@ if (errors>0):
     print("Skipping execution of commands - use --force if you know what you are doing and want to bypass errors")
     exit(0)
 
-#TODO - execute the SSH commands to change backing device
-print("CHANGING VNIC FOR REAL!")
+
+print("Running commands to change vNIC")
+
+for cmd in commands:
+  print("running: "+cmd)
+  process = subprocess.run(["ssh",hmcORfile,"-o","BatchMode=yes",cmd],stdout=subprocess.PIPE,stderr=subprocess.PIPE,encoding="utf-8", universal_newlines=True) 
+  if (process.returncode != 0):
+    print("Error processing SSH Command: "+cmd)
+    print(process.stderr)
+    print(process.stdout)
