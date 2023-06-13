@@ -68,7 +68,7 @@ if (args.file != None):
     hmcORfile=open(args.file,"r")
 else:
   hmcORfile = args.hmc
-  if not '@' in hmcORfile:
+  if hmcORfile != None and not '@' in hmcORfile:
     hmcORfile = 'hscroot@' + hmcORfile
   
 if (args.offline):
