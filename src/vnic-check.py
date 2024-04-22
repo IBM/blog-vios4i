@@ -190,7 +190,7 @@ for hmcname in hmcs:
           notoper.append(bdev['sriov-adapter-ID']+"-"+bdev['sriov-physical-port-ID'])
     
       # Generate email contents for errors in this vNIC      
-      if (prtyerror or len(dupprty) > 0 or viosdup > 0 or notoper > 0 or opercount < minopercount):
+      if (prtyerror or len(dupprty) > 0 or len(viosdup) > 0 or len(notoper) > 0 or opercount < minopercount):
         sendemail = True
         if (syshdr is not None):
           print(syshdr,file=email)
